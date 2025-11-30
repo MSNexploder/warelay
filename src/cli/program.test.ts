@@ -4,10 +4,12 @@ const sendCommand = vi.fn();
 const statusCommand = vi.fn();
 const webhookCommand = vi.fn().mockResolvedValue(undefined);
 const ensureTwilioEnv = vi.fn();
+const ensureTelegramEnv = vi.fn();
 const loginWeb = vi.fn();
 const monitorWebProvider = vi.fn();
 const pickProvider = vi.fn();
 const monitorTwilio = vi.fn();
+const monitorTelegram = vi.fn();
 const logTwilioFrom = vi.fn();
 const logWebSelfId = vi.fn();
 const waitForever = vi.fn();
@@ -25,17 +27,22 @@ vi.mock("../commands/send.js", () => ({ sendCommand }));
 vi.mock("../commands/status.js", () => ({ statusCommand }));
 vi.mock("../commands/webhook.js", () => ({ webhookCommand }));
 vi.mock("../env.js", () => ({ ensureTwilioEnv }));
+vi.mock("../telegram/env.js", () => ({ ensureTelegramEnv }));
 vi.mock("../runtime.js", () => ({ defaultRuntime: runtime }));
 vi.mock("../provider-web.js", () => ({
   loginWeb,
   monitorWebProvider,
   pickProvider,
 }));
+vi.mock("../telegram/heartbeat.js", () => ({
+  runTelegramHeartbeatOnce: vi.fn(),
+}));
 vi.mock("./deps.js", () => ({
   createDefaultDeps: () => ({ waitForever }),
   logTwilioFrom,
   logWebSelfId,
   monitorTwilio,
+  monitorTelegram,
 }));
 vi.mock("./relay_tmux.js", () => ({ spawnRelayTmux }));
 
@@ -60,7 +67,7 @@ describe("cli program", () => {
       program.parseAsync(["relay", "--provider", "bogus"], { from: "user" }),
     ).rejects.toThrow("exit");
     expect(runtime.error).toHaveBeenCalledWith(
-      "--provider must be auto, web, or twilio",
+      "--provider must be auto, web, twilio, or telegram",
     );
   });
 
@@ -77,6 +84,18 @@ describe("cli program", () => {
     expect(logWebSelfId).toHaveBeenCalled();
     expect(ensureTwilioEnv).not.toHaveBeenCalled();
     expect(monitorTwilio).not.toHaveBeenCalled();
+  });
+
+  it("runs relay with telegram provider", async () => {
+    pickProvider.mockResolvedValue("telegram");
+    monitorTelegram.mockResolvedValue(undefined);
+    const program = buildProgram();
+    await program.parseAsync(
+      ["relay", "--provider", "telegram", "--interval", "2", "--lookback", "1"],
+      { from: "user" },
+    );
+    expect(ensureTelegramEnv).toHaveBeenCalled();
+    expect(monitorTelegram).toHaveBeenCalledWith(2);
   });
 
   it("runs relay tmux attach command", async () => {

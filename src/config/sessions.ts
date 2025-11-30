@@ -4,7 +4,7 @@ import path from "node:path";
 
 import JSON5 from "json5";
 import type { MsgContext } from "../auto-reply/templating.js";
-import { CONFIG_DIR, normalizeE164 } from "../utils.js";
+import { CONFIG_DIR, normalizeContact } from "../utils.js";
 
 export type SessionScope = "per-sender" | "global";
 
@@ -56,6 +56,6 @@ export async function saveSessionStore(
 // Decide which session bucket to use (per-sender vs global).
 export function deriveSessionKey(scope: SessionScope, ctx: MsgContext) {
   if (scope === "global") return "global";
-  const from = ctx.From ? normalizeE164(ctx.From) : "";
+  const from = ctx.From ? normalizeContact(ctx.From) : "";
   return from || "unknown";
 }

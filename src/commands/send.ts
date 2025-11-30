@@ -101,6 +101,44 @@ export async function sendCommand(
     return;
   }
 
+  if (opts.provider === "telegram") {
+    if (opts.dryRun) {
+      runtime.log(
+        `[dry-run] would send via telegram -> ${opts.to}: ${opts.message}${opts.media ? ` (media ${opts.media})` : ""}`,
+      );
+      return;
+    }
+    if (waitSeconds !== 0) {
+      runtime.log(
+        info("Wait/poll are Twilio-only; ignored for provider=telegram."),
+      );
+    }
+    const res = await deps
+      .sendTelegramMessage(opts.to, opts.message, {
+        mediaUrl: opts.media,
+        runtime,
+      })
+      .catch((err) => {
+        runtime.error(`❌ Telegram send failed: ${String(err)}`);
+        throw err;
+      });
+    if (opts.json) {
+      runtime.log(
+        JSON.stringify(
+          {
+            provider: "telegram",
+            to: opts.to,
+            messageId: res?.messageId ?? null,
+            mediaUrl: opts.media ?? null,
+          },
+          null,
+          2,
+        ),
+      );
+    }
+    return;
+  }
+
   if (opts.dryRun) {
     runtime.log(
       `[dry-run] would send via twilio -> ${opts.to}: ${opts.message}${opts.media ? ` (media ${opts.media})` : ""}`,

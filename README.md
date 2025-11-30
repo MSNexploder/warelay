@@ -1,4 +1,4 @@
-# 📡 warelay — Send, receive, and auto-reply on WhatsApp.
+# 📡 warelay — Send, receive, and auto-reply on WhatsApp/Telegram.
 
 <p align="center">
   <img src="README-header.png" alt="warelay header" width="640">
@@ -33,10 +33,17 @@ Install from npm (global): `npm install -g warelay` (Node 22+). Then choose **on
    - Polling (no ingress): `warelay relay --provider twilio --interval 5 --lookback 10`
    - Webhook + public URL via Tailscale Funnel: `warelay webhook --ingress tailscale --port 42873 --path /webhook/whatsapp --verbose`
 
+**C) Telegram Bot (long-polling via Bot API)**
+1. Create a bot with [BotFather](https://core.telegram.org/bots/features#botfather), copy the token into `TELEGRAM_BOT_TOKEN` in `.env` (optional `TELEGRAM_API_BASE` for a self-hosted Bot API server). If Telegram refuses to open the bot, regenerate the token in BotFather and try again.
+2. Start a chat with your bot: open `https://t.me/<your_bot_username>` in the Telegram app, tap “Start” (or “Unblock/Restart” if shown), and send a quick hello so the bot can reply.
+3. Find the chat id: run `curl -s https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getUpdates | jq '.result[] | select(.message).message.chat.id'` after your hello (for channels, use `(.message // .channel_post).chat.id`). If you get empty results, send another message to the bot or clear any webhook with `curl -s https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/deleteWebhook` and retry.
+4. Send a message: `warelay send --provider telegram --to 123456789 --message "Hi from warelay"`.
+5. Auto-reply loop: `warelay relay --provider telegram --interval 30 --verbose` (uses `getUpdates` long polling with `timeout`, filters to message updates, and respects Bot API `retry_after` rate limits; don’t set webhooks while polling). Webhook option: `warelay webhook --provider telegram --ingress tailscale --port 42873 --path /webhook/telegram --telegram-secret <token>` sets a Bot API webhook via Funnel.
+
 > Already developing locally? You can still run `pnpm install` and `pnpm warelay ...` from the repo, but end users only need the npm package.
 
 ## Main Features
-- **Two providers:** Twilio (default) for reliable delivery + status; Web provider for quick personal sends/receives via QR login.
+- **Three providers:** Twilio (default) for reliable delivery + status; Telegram Bot API for bot-style chats and channels; Web provider for quick personal sends/receives via QR login.
 - **Auto-replies:** Static templates or external commands (Claude-aware), with per-sender or global sessions and `/new` resets.
 - Claude setup guide: see `docs/claude-config.md` for the exact Claude CLI configuration we support.
 - **Webhook in one go:** `warelay webhook --ingress tailscale` enables Tailscale Funnel, runs the webhook server, and updates the Twilio sender callback URL.
@@ -46,10 +53,10 @@ Install from npm (global): `npm install -g warelay` (Node 22+). Then choose **on
 ## Command Cheat Sheet
 | Command | What it does | Core flags |
 | --- | --- | --- |
-| `warelay send` | Send a WhatsApp message (Twilio or Web) | `--to <e164>` `--message <text>` `--wait <sec>` `--poll <sec>` `--provider twilio\|web` `--json` `--dry-run` `--verbose` |
-| `warelay relay` | Auto-reply loop (poll Twilio or listen on Web) | `--provider <auto\|twilio\|web>` `--interval <sec>` `--lookback <min>` `--verbose` |
+| `warelay send` | Send a message (Twilio, Telegram, or Web) | `--to <e164/chat>` `--message <text>` `--wait <sec>` `--poll <sec>` `--provider twilio\|web\|telegram` `--json` `--dry-run` `--verbose` |
+| `warelay relay` | Auto-reply loop (poll Twilio/Telegram or listen on Web) | `--provider <auto\|twilio\|web\|telegram>` `--interval <sec>` `--lookback <min>` `--verbose` |
 | `warelay status` | Show recent sent/received messages | `--limit <n>` `--lookback <min>` `--json` `--verbose` |
-| `warelay heartbeat` | Trigger one heartbeat poll (web) | `--provider <auto\|web>` `--to <e164?>` `--session-id <uuid?>` `--all` `--verbose` |
+| `warelay heartbeat` | Trigger one heartbeat poll (web/twilio/telegram) | `--provider <auto\|web\|twilio\|telegram>` `--to <e164/chat?>` `--session-id <uuid?>` `--all` `--verbose` |
 | `warelay relay:heartbeat` | Run relay with an immediate heartbeat (no tmux) | `--provider <auto\|web>` `--verbose` |
 | `warelay relay:heartbeat:tmux` | Start relay in tmux and fire a heartbeat on start (web) | _no flags_ |
 | `warelay webhook` | Run inbound webhook (`ingress=tailscale` updates Twilio; `none` is local-only) | `--ingress tailscale\|none` `--port <port>` `--path <path>` `--reply <text>` `--verbose` `--yes` `--dry-run` |
@@ -58,6 +65,7 @@ Install from npm (global): `npm install -g warelay` (Node 22+). Then choose **on
 ### Sending media
 - Twilio: `warelay send --to +1... --message "Hi" --media ./pic.jpg --serve-media` (needs `warelay webhook --ingress tailscale` or `--serve-media` to auto-host via Funnel; max 5 MB per file because of the built-in host).
 - Web: `warelay send --provider web --media ./pic.jpg --message "Hi"` (local path or URL; no hosting needed). Web auto-detects media kind: images (≤6 MB), audio/voice or video (≤16 MB), other docs (≤100 MB). Images are resized to max 2048px and JPEG recompressed when the cap would be exceeded.
+- Telegram: `warelay send --provider telegram --media https://example.com/pic.jpg --message "Hi"` (Bot API pulls HTTPS media; local file paths are not uploaded by warelay). Uses `sendPhoto` for image URLs, `sendDocument` otherwise.
 - Auto-replies can attach `mediaUrl` in `~/.warelay/warelay.json` (used alongside `text` when present). Web auto-replies honor `inbound.reply.mediaMaxMb` (default 5 MB) as a post-compression target but will never exceed the provider hard limits above.
 
 ### Voice notes (optional transcription)
@@ -88,7 +96,10 @@ Install from npm (global): `npm install -g warelay` (Node 22+). Then choose **on
 
 ## Providers
 - **Twilio (default):** needs `.env` creds + WhatsApp-enabled number; supports delivery tracking, polling, webhooks, and auto-reply typing indicators.
+- **Telegram (Bot API):** needs `TELEGRAM_BOT_TOKEN`; long-polls `getUpdates` with `timeout` and `allowed_updates=["message"]` (updates are kept ≤24h server-side). Webhooks are supported via `warelay webhook --provider telegram` (Funnel + `setWebhook`); clear existing webhooks before polling. `--to` accepts numeric chat ids for DMs or `@channelusername` for channels. Typing indicators use `sendChatAction`. Media must be HTTPS-accessible; warelay does not upload local files.
 - **Web (`--provider web`):** uses your personal WhatsApp via Baileys; supports send/receive + auto-reply, but no delivery-status wait; cache lives in `~/.warelay/credentials/` (rerun `login` if logged out). If the Web socket closes, the relay exits instead of pivoting to Twilio.
+
+See `docs/telegram.md` for Telegram-specific setup and best practices.
 - **Auto-select (`relay` only):** `--provider auto` picks Web when a cache exists at start, otherwise Twilio polling. It will not swap from Web to Twilio mid-run if the Web session drops.
 
 Best practice: use a dedicated WhatsApp account (separate SIM/eSIM or business account) for automation instead of your primary personal account to avoid unexpected logouts or rate limits.
@@ -114,6 +125,8 @@ warelay supports running on the same phone number you message from—you chat wi
 | `TWILIO_API_SECRET` | Yes* | API secret paired with `TWILIO_API_KEY` |
 | `TWILIO_WHATSAPP_FROM` | Yes (Twilio provider) | WhatsApp-enabled sender, e.g. `whatsapp:+19995550123` |
 | `TWILIO_SENDER_SID` | Optional | Overrides auto-discovery of the sender SID |
+| `TELEGRAM_BOT_TOKEN` | Yes (Telegram provider) | Telegram Bot API token from BotFather |
+| `TELEGRAM_API_BASE` | Optional | Override Bot API base (e.g. self-hosted `telegram-bot-api`) |
 
 (*Provide either auth token OR api key/secret.)
 

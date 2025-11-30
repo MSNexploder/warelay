@@ -11,6 +11,13 @@ import {
   sendMessageWeb,
 } from "../providers/web/index.js";
 import { defaultRuntime, type RuntimeEnv } from "../runtime.js";
+import { ensureTelegramEnv } from "../telegram/env.js";
+import { monitorTelegram as monitorTelegramImpl } from "../telegram/monitor.js";
+import { sendTelegramMessage } from "../telegram/send.js";
+import {
+  setTelegramWebhook,
+  startTelegramWebhook,
+} from "../telegram/webhook.js";
 import { createClient } from "../twilio/client.js";
 import { listRecentMessages } from "../twilio/messages.js";
 import { monitorTwilio as monitorTwilioImpl } from "../twilio/monitor.js";
@@ -24,22 +31,27 @@ import { waitForever } from "./wait.js";
 export type CliDeps = {
   sendMessage: typeof sendMessage;
   sendMessageWeb: typeof sendMessageWeb;
+  sendTelegramMessage: typeof sendTelegramMessage;
   waitForFinalStatus: typeof waitForFinalStatus;
   assertProvider: typeof assertProvider;
   createClient?: typeof createClient;
   monitorTwilio: typeof monitorTwilio;
+  monitorTelegram: typeof monitorTelegram;
   listRecentMessages: typeof listRecentMessages;
   ensurePortAvailable: typeof ensurePortAvailable;
   startWebhook: typeof startWebhook;
+  startTelegramWebhook: typeof startTelegramWebhook;
   waitForever: typeof waitForever;
   ensureBinary: typeof ensureBinary;
   ensureFunnel: typeof ensureFunnel;
   getTailnetHostname: typeof getTailnetHostname;
   readEnv: typeof readEnv;
+  setTelegramWebhook: typeof setTelegramWebhook;
   findWhatsappSenderSid: typeof findWhatsappSenderSid;
   updateWebhook: typeof updateWebhook;
   handlePortError: typeof handlePortError;
   monitorWebProvider: typeof monitorWebProvider;
+  ensureTelegramEnv: typeof ensureTelegramEnv;
   resolveTwilioMediaUrl: (
     source: string,
     opts: { serveMedia: boolean; runtime: RuntimeEnv },
@@ -67,18 +79,32 @@ export async function monitorTwilio(
   });
 }
 
+export async function monitorTelegram(
+  pollSeconds: number,
+  maxIterations = Infinity,
+  depsOverride?: Partial<Parameters<typeof monitorTelegramImpl>[1]>["deps"],
+) {
+  return monitorTelegramImpl(pollSeconds, {
+    maxIterations,
+    deps: depsOverride,
+  });
+}
+
 export function createDefaultDeps(): CliDeps {
   // Default dependency bundle used by CLI commands and tests.
   return {
     sendMessage,
     sendMessageWeb,
+    sendTelegramMessage,
     waitForFinalStatus,
     assertProvider,
     createClient,
     monitorTwilio,
+    monitorTelegram,
     listRecentMessages,
     ensurePortAvailable,
     startWebhook,
+    startTelegramWebhook,
     waitForever,
     ensureBinary,
     ensureFunnel,
@@ -88,6 +114,8 @@ export function createDefaultDeps(): CliDeps {
     updateWebhook,
     handlePortError,
     monitorWebProvider,
+    ensureTelegramEnv,
+    setTelegramWebhook,
     resolveTwilioMediaUrl: async (source, { serveMedia, runtime }) => {
       if (/^https?:\/\//i.test(source)) return source;
       const hosted = await ensureMediaHosted(source, {

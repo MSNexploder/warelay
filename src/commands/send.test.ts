@@ -19,6 +19,7 @@ const runtime: RuntimeEnv = {
 const baseDeps = {
   assertProvider: vi.fn(),
   sendMessageWeb: vi.fn(),
+  sendTelegramMessage: vi.fn(),
   resolveTwilioMediaUrl: vi.fn(),
   sendMessage: vi.fn(),
   waitForFinalStatus: vi.fn(),
@@ -144,6 +145,43 @@ describe("sendCommand", () => {
     expect(deps.waitForFinalStatus).not.toHaveBeenCalled();
     expect(runtime.log).toHaveBeenCalledWith(
       expect.stringContaining('"provider": "twilio"'),
+    );
+  });
+
+  it("handles telegram dry-run and JSON", async () => {
+    const deps = {
+      ...baseDeps,
+      sendTelegramMessage: vi.fn().mockResolvedValue({ messageId: 42 }),
+    } as CliDeps;
+    await sendCommand(
+      {
+        to: "123",
+        message: "hi",
+        wait: "1",
+        poll: "2",
+        provider: "telegram",
+        dryRun: true,
+      },
+      deps,
+      runtime,
+    );
+    expect(deps.sendTelegramMessage).not.toHaveBeenCalled();
+
+    await sendCommand(
+      {
+        to: "123",
+        message: "hi",
+        wait: "1",
+        poll: "2",
+        provider: "telegram",
+        json: true,
+      },
+      deps,
+      runtime,
+    );
+    expect(deps.sendTelegramMessage).toHaveBeenCalled();
+    expect(runtime.log).toHaveBeenCalledWith(
+      expect.stringContaining('"provider": "telegram"'),
     );
   });
 });

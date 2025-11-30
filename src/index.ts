@@ -34,6 +34,13 @@ import {
 } from "./infra/tailscale.js";
 import { runCommandWithTimeout, runExec } from "./process/exec.js";
 import { monitorWebProvider } from "./provider-web.js";
+import { ensureTelegramEnv, readTelegramEnv } from "./telegram/env.js";
+import { monitorTelegram } from "./telegram/monitor.js";
+import {
+  getTelegramMe,
+  sendTelegramAction,
+  sendTelegramMessage,
+} from "./telegram/send.js";
 import { createClient } from "./twilio/client.js";
 import {
   formatMessageLine,
@@ -52,7 +59,12 @@ import {
 } from "./twilio/update-webhook.js";
 import { formatTwilioError, logTwilioSendError } from "./twilio/utils.js";
 import { startWebhook as startWebhookImpl } from "./twilio/webhook.js";
-import { assertProvider, normalizeE164, toWhatsappJid } from "./utils.js";
+import {
+  assertProvider,
+  normalizeContact,
+  normalizeE164,
+  toWhatsappJid,
+} from "./utils.js";
 
 dotenv.config({ quiet: true });
 
@@ -76,7 +88,9 @@ export {
   ensureFunnel,
   ensureGoInstalled,
   ensurePortAvailable,
+  ensureTelegramEnv,
   ensureTailscaledInstalled,
+  getTelegramMe,
   findIncomingNumberSidImpl as findIncomingNumberSid,
   findMessagingServiceSidImpl as findMessagingServiceSid,
   findWhatsappSenderSid,
@@ -89,19 +103,24 @@ export {
   listRecentMessages,
   loadConfig,
   loadSessionStore,
+  monitorTelegram,
   monitorTwilio,
   monitorWebProvider,
+  normalizeContact,
   normalizeE164,
   PortInUseError,
   promptYesNo,
   createDefaultDeps,
   readEnv,
+  readTelegramEnv,
   resolveStorePath,
   runCommandWithTimeout,
   runExec,
   saveSessionStore,
   sendMessage,
   sendTypingIndicator,
+  sendTelegramAction,
+  sendTelegramMessage,
   setMessagingServiceWebhook,
   sortByDateDesc,
   startWebhook,

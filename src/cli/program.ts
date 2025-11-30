@@ -17,6 +17,8 @@ import {
   type WebMonitorTuning,
 } from "../provider-web.js";
 import { defaultRuntime } from "../runtime.js";
+import { ensureTelegramEnv } from "../telegram/env.js";
+import { runTelegramHeartbeatOnce } from "../telegram/heartbeat.js";
 import { runTwilioHeartbeatOnce } from "../twilio/heartbeat.js";
 import type { Provider } from "../utils.js";
 import { VERSION } from "../version.js";
@@ -29,6 +31,7 @@ import {
   logTwilioFrom,
   logWebSelfId,
   monitorTwilio,
+  monitorTelegram,
 } from "./deps.js";
 import { spawnRelayTmux } from "./relay_tmux.js";
 
@@ -36,11 +39,13 @@ export function buildProgram() {
   const program = new Command();
   const PROGRAM_VERSION = VERSION;
   const TAGLINE =
-    "Send, receive, and auto-reply on WhatsApp—Twilio-backed or QR-linked.";
+    "Send, receive, and auto-reply on WhatsApp/Telegram—Twilio, Telegram Bot, or QR-linked.";
 
   program
     .name("warelay")
-    .description("WhatsApp relay CLI (Twilio or WhatsApp Web session)")
+    .description(
+      "WhatsApp/Telegram relay CLI (Twilio, Telegram Bot API, or WhatsApp Web session)",
+    )
     .version(PROGRAM_VERSION);
 
   const formatIntroLine = (version: string, rich = true) => {
@@ -81,6 +86,10 @@ export function buildProgram() {
     [
       'warelay send --to +15551234567 --message "Hi" --provider web --json',
       "Send via your web session and print JSON result.",
+    ],
+    [
+      'warelay send --provider telegram --to 123456789 --message "Hi from warelay"',
+      "Send via Telegram Bot API to a chat id or @channel username.",
     ],
     [
       "warelay relay --provider auto --interval 5 --lookback 15 --verbose",
@@ -133,7 +142,7 @@ export function buildProgram() {
 
   program
     .command("send")
-    .description("Send a WhatsApp message")
+    .description("Send a WhatsApp/Telegram message")
     .requiredOption(
       "-t, --to <number>",
       "Recipient number in E.164 (e.g. +15551234567)",
@@ -154,7 +163,11 @@ export function buildProgram() {
       "20",
     )
     .option("-p, --poll <seconds>", "Polling interval while waiting", "2")
-    .option("--provider <provider>", "Provider: twilio | web", "twilio")
+    .option(
+      "--provider <provider>",
+      "Provider: twilio | web | telegram",
+      "twilio",
+    )
     .option("--dry-run", "Print payload and skip sending", false)
     .option("--json", "Output result as JSON", false)
     .option("--verbose", "Verbose logging", false)
@@ -183,7 +196,7 @@ Examples:
     .description(
       "Trigger a heartbeat or manual send once (web or twilio, no tmux)",
     )
-    .option("--provider <provider>", "auto | web | twilio", "auto")
+    .option("--provider <provider>", "auto | web | twilio | telegram", "auto")
     .option("--to <number>", "Override target E.164; defaults to allowFrom[0]")
     .option(
       "--session-id <id>",
@@ -243,8 +256,8 @@ Examples:
         defaultRuntime.exit(1);
       }
       const providerPref = String(opts.provider ?? "auto");
-      if (!["auto", "web", "twilio"].includes(providerPref)) {
-        defaultRuntime.error("--provider must be auto, web, or twilio");
+      if (!["auto", "web", "twilio", "telegram"].includes(providerPref)) {
+        defaultRuntime.error("--provider must be auto, web, twilio, or telegram");
         defaultRuntime.exit(1);
       }
 
@@ -257,8 +270,11 @@ Examples:
       const provider =
         providerPref === "twilio"
           ? "twilio"
-          : await pickProvider(providerPref as "auto" | "web");
+          : providerPref === "telegram"
+            ? "telegram"
+            : await pickProvider(providerPref as "auto" | "web");
       if (provider === "twilio") ensureTwilioEnv();
+      if (provider === "telegram") ensureTelegramEnv();
 
       try {
         for (const to of recipients) {
@@ -268,6 +284,14 @@ Examples:
               verbose: Boolean(opts.verbose),
               runtime: defaultRuntime,
               sessionId: opts.sessionId,
+              overrideBody,
+              dryRun,
+            });
+          } else if (provider === "telegram") {
+            await runTelegramHeartbeatOnce({
+              to,
+              verbose: Boolean(opts.verbose),
+              runtime: defaultRuntime,
               overrideBody,
               dryRun,
             });
@@ -289,7 +313,7 @@ Examples:
   program
     .command("relay")
     .description("Auto-reply to inbound messages (auto-selects web or twilio)")
-    .option("--provider <provider>", "auto | web | twilio", "auto")
+    .option("--provider <provider>", "auto | web | twilio | telegram", "auto")
     .option("-i, --interval <seconds>", "Polling interval for twilio mode", "5")
     .option(
       "-l, --lookback <minutes>",
@@ -331,8 +355,8 @@ Examples:
       const { file: logFile, level: logLevel } = getResolvedLoggerSettings();
       defaultRuntime.log(info(`logs: ${logFile} (level ${logLevel})`));
       const providerPref = String(opts.provider ?? "auto");
-      if (!["auto", "web", "twilio"].includes(providerPref)) {
-        defaultRuntime.error("--provider must be auto, web, or twilio");
+      if (!["auto", "web", "twilio", "telegram"].includes(providerPref)) {
+        defaultRuntime.error("--provider must be auto, web, twilio, or telegram");
         defaultRuntime.exit(1);
       }
       const intervalSeconds = Number.parseInt(opts.interval, 10);
@@ -449,6 +473,12 @@ Examples:
         }
       }
 
+      if (provider === "telegram") {
+        ensureTelegramEnv();
+        await monitorTelegram(intervalSeconds);
+        return;
+      }
+
       ensureTwilioEnv();
       logTwilioFrom();
       await monitorTwilio(intervalSeconds, lookbackMinutes);
@@ -541,7 +571,7 @@ Examples:
   program
     .command("webhook")
     .description(
-      "Run inbound webhook. ingress=tailscale updates Twilio; ingress=none stays local-only.",
+      "Run inbound webhook. ingress=tailscale updates Twilio/Telegram; ingress=none stays local-only.",
     )
     .option("-p, --port <port>", "Port to listen on", "42873")
     .option("-r, --reply <text>", "Optional auto-reply text")
@@ -550,6 +580,15 @@ Examples:
       "--ingress <mode>",
       "Ingress: tailscale (funnel + Twilio update) | none (local only)",
       "tailscale",
+    )
+    .option(
+      "--provider <provider>",
+      "Provider: twilio | telegram",
+      "twilio",
+    )
+    .option(
+      "--telegram-secret <token>",
+      "Secret token for Telegram webhook verification (recommended)",
     )
     .option("--verbose", "Log inbound and auto-replies", false)
     .option("-y, --yes", "Auto-confirm prompts when possible", false)

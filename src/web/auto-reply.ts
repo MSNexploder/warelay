@@ -15,7 +15,7 @@ import { logInfo } from "../logger.js";
 import { getChildLogger } from "../logging.js";
 import { getQueueSize } from "../process/command-queue.js";
 import { defaultRuntime, type RuntimeEnv } from "../runtime.js";
-import { normalizeE164 } from "../utils.js";
+import { normalizeContact } from "../utils.js";
 import { monitorWebInbox } from "./inbound.js";
 import { sendViaIpc, startIpcServer, stopIpcServer } from "./ipc.js";
 import { loadWebMedia } from "./media.js";
@@ -281,12 +281,12 @@ function getFallbackRecipient(cfg: ReturnType<typeof loadConfig>) {
         ? cfg.inbound.allowFrom.filter((v) => v !== "*")
         : [];
     if (allowFrom.length === 0) return null;
-    return allowFrom[0] ? normalizeE164(allowFrom[0]) : null;
+    return allowFrom[0] ? normalizeContact(allowFrom[0]) : null;
   }
   const mostRecent = candidates.sort(
     (a, b) => (b[1]?.updatedAt ?? 0) - (a[1]?.updatedAt ?? 0),
   )[0];
-  return mostRecent ? normalizeE164(mostRecent[0]) : null;
+  return mostRecent ? normalizeContact(mostRecent[0]) : null;
 }
 
 function getSessionRecipients(cfg: ReturnType<typeof loadConfig>) {
@@ -298,7 +298,7 @@ function getSessionRecipients(cfg: ReturnType<typeof loadConfig>) {
   return Object.entries(store)
     .filter(([key]) => key !== "global" && key !== "unknown")
     .map(([key, entry]) => ({
-      to: normalizeE164(key),
+      to: normalizeContact(key),
       updatedAt: entry?.updatedAt ?? 0,
     }))
     .filter(({ to }) => Boolean(to))
@@ -309,12 +309,13 @@ export function resolveHeartbeatRecipients(
   cfg: ReturnType<typeof loadConfig>,
   opts: { to?: string; all?: boolean } = {},
 ) {
-  if (opts.to) return { recipients: [normalizeE164(opts.to)], source: "flag" };
+  if (opts.to)
+    return { recipients: [normalizeContact(opts.to)], source: "flag" };
 
   const sessionRecipients = getSessionRecipients(cfg);
   const allowFrom =
     Array.isArray(cfg.inbound?.allowFrom) && cfg.inbound.allowFrom.length > 0
-      ? cfg.inbound.allowFrom.filter((v) => v !== "*").map(normalizeE164)
+      ? cfg.inbound.allowFrom.filter((v) => v !== "*").map(normalizeContact)
       : [];
 
   const unique = (list: string[]) => [...new Set(list.filter(Boolean))];

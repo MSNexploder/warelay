@@ -8,6 +8,7 @@ import {
   ensureDir,
   jidToE164,
   normalizeE164,
+  normalizeContact,
   normalizePath,
   sleep,
   toWhatsappJid,
@@ -59,6 +60,11 @@ describe("assertProvider", () => {
   it("throws for invalid provider", () => {
     expect(() => assertProvider("bad" as string)).toThrow();
   });
+
+  it("accepts known providers", () => {
+    expect(() => assertProvider("telegram")).not.toThrow();
+    expect(() => assertProvider("web")).not.toThrow();
+  });
 });
 
 describe("normalizeE164 & toWhatsappJid", () => {
@@ -67,6 +73,16 @@ describe("normalizeE164 & toWhatsappJid", () => {
     expect(toWhatsappJid("whatsapp:+555 123 4567")).toBe(
       "5551234567@s.whatsapp.net",
     );
+  });
+});
+
+describe("normalizeContact", () => {
+  it("keeps non-phone identifiers intact", () => {
+    expect(normalizeContact("telegram:12345")).toBe("telegram:12345");
+  });
+
+  it("normalizes likely phone numbers", () => {
+    expect(normalizeContact("(555) 123-4567")).toBe("+5551234567");
   });
 });
 

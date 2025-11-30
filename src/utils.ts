@@ -6,11 +6,11 @@ export async function ensureDir(dir: string) {
   await fs.promises.mkdir(dir, { recursive: true });
 }
 
-export type Provider = "twilio" | "web";
+export type Provider = "twilio" | "web" | "telegram";
 
 export function assertProvider(input: string): asserts input is Provider {
-  if (input !== "twilio" && input !== "web") {
-    throw new Error("Provider must be 'twilio' or 'web'");
+  if (input !== "twilio" && input !== "web" && input !== "telegram") {
+    throw new Error("Provider must be 'twilio', 'web', or 'telegram'");
   }
 }
 
@@ -28,6 +28,14 @@ export function normalizeE164(number: string): string {
   const digits = withoutPrefix.replace(/[^\d+]/g, "");
   if (digits.startsWith("+")) return `+${digits.slice(1)}`;
   return `+${digits}`;
+}
+
+export function normalizeContact(identifier: string): string {
+  const trimmed = identifier.trim();
+  const looksLikePhone =
+    /^(\+|whatsapp:)?[+\d\s().-]+$/.test(trimmed) || /^\d+$/.test(trimmed);
+  if (looksLikePhone) return normalizeE164(trimmed);
+  return trimmed;
 }
 
 export function toWhatsappJid(number: string): string {

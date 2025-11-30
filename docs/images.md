@@ -10,7 +10,7 @@ This document defines how `warelay` should handle sending and replying with imag
 - Avoid introducing new external services: reuse the existing Tailscale Funnel port to host media for Twilio.
 
 ## CLI & Config Surface
-- `warelay send --media <path-or-url> [--message <caption>] [--provider twilio|web]`
+- `warelay send --media <path-or-url> [--message <caption>] [--provider twilio|web|telegram]` (Telegram expects HTTPS URLs; warelay does not upload local files there)
   - `--media` optional; `--message` remains required for now (caption can be empty string to send only media).
   - `--dry-run` prints the resolved payload including hosted URL (twilio) or file path (web).
   - `--json` emits `{ provider, to, sid/messageId, mediaUrl, caption }`.

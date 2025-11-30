@@ -12,6 +12,8 @@ export async function webhookCommand(
     yes?: boolean;
     ingress?: "tailscale" | "none";
     dryRun?: boolean;
+    provider?: "twilio" | "telegram";
+    telegramSecret?: string;
   },
   deps: CliDeps,
   runtime: RuntimeEnv,
@@ -21,10 +23,15 @@ export async function webhookCommand(
     throw new Error("Port must be between 1 and 65535");
   }
 
+  const provider = opts.provider ?? "twilio";
+  if (provider !== "twilio" && provider !== "telegram") {
+    throw new Error("Provider must be twilio or telegram");
+  }
+
   const ingress = opts.ingress ?? "tailscale";
 
-  // Tailscale ingress: reuse the `up` flow (Funnel + Twilio webhook update).
-  if (ingress === "tailscale") {
+  // Tailscale ingress: reuse the `up` flow (Funnel + webhook update).
+  if (ingress === "tailscale" && provider === "twilio") {
     const result = await upCommand(
       {
         port: opts.port,
@@ -37,6 +44,47 @@ export async function webhookCommand(
       runtime,
     );
     return result.server;
+  }
+
+  if (provider === "telegram") {
+    deps.ensureTelegramEnv(runtime);
+    await deps.ensurePortAvailable(port);
+    if (opts.reply === "dry-run" || opts.dryRun) {
+      runtime.log(
+        `[dry-run] would start telegram webhook on port ${port} path ${opts.path}`,
+      );
+      return undefined;
+    }
+    const startServer = () =>
+      deps.startTelegramWebhook(port, opts.path, {
+        reply: opts.reply,
+        verbose: Boolean(opts.verbose),
+        runtime,
+        secretToken: opts.telegramSecret,
+      });
+
+    if (ingress === "tailscale") {
+      await deps.ensureBinary("tailscale", undefined, runtime);
+      await retryAsync(() => deps.ensureFunnel(port, undefined, runtime), 3, 500);
+      const host = await deps.getTailnetHostname();
+      const publicUrl = `https://${host}${opts.path}`;
+      runtime.log(`🌐 Public Telegram webhook URL (via Funnel): ${publicUrl}`);
+      const server = await retryAsync(startServer, 3, 300);
+      await deps.setTelegramWebhook(publicUrl, {
+        secretToken: opts.telegramSecret,
+        dropPendingUpdates: true,
+      });
+      runtime.log(
+        "\nTelegram webhook set. Leave this running to stay online. Ctrl+C to stop.",
+      );
+      return server;
+    }
+
+    const server = await retryAsync(startServer, 3, 300);
+    runtime.log(
+      "Telegram webhook running locally. Set your public URL with setWebhook manually if needed.",
+    );
+    return server;
   }
 
   // Local-only webhook (no ingress / no Twilio update).
