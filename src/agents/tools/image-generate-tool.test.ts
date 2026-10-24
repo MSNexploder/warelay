@@ -64,7 +64,6 @@ let imageOps: typeof import("../../media/media-services.js");
 let splitMediaFromOutput: typeof import("../../media/parse.js").splitMediaFromOutput;
 let mediaStore: typeof import("../../media/store.js");
 let webMedia: typeof import("../../media/web-media.js");
-let resetRecentMediaGenerationDuplicateGuardsForTests: typeof import("../media-generation-task-status-shared.test-support.js").resetRecentMediaGenerationDuplicateGuardsForTests;
 let createImageGenerateTool: typeof import("./image-generate-tool.js").createImageGenerateTool;
 
 function mockGeneratedImage(
@@ -320,6 +319,8 @@ function createToolWithPrimaryImageModel(
   extra?: {
     agentDir?: string;
     workspaceDir?: string;
+    agentSessionKey?: string;
+    requesterOrigin?: NonNullable<Parameters<typeof createImageGenerateTool>[0]>["requesterOrigin"];
     fallbacks?: string[];
   },
 ) {
@@ -441,8 +442,6 @@ describe("createImageGenerateTool", () => {
     ({ splitMediaFromOutput } = await import("../../media/parse.js"));
     mediaStore = await import("../../media/store.js");
     webMedia = await import("../../media/web-media.js");
-    ({ resetRecentMediaGenerationDuplicateGuardsForTests } =
-      await import("../media-generation-task-status-shared.test-support.js"));
     ({ createImageGenerateTool } = await import("./image-generate-tool.js"));
   });
 
@@ -479,7 +478,6 @@ describe("createImageGenerateTool", () => {
     });
     mediaActivityMocks.listOperations.mockReset();
     mediaActivityMocks.listOperations.mockReturnValue(undefined);
-    resetRecentMediaGenerationDuplicateGuardsForTests();
     resetGeneratedMediaTaskActivityForTests();
   });
 
@@ -514,13 +512,7 @@ describe("createImageGenerateTool", () => {
         throw new Error("runtime provider list should not run during tool registration");
       });
 
-    requireImageGenerateTool(
-      createImageGenerateTool({
-        config: configWithDefaults({
-          mediaModels: { image: { primary: "openai/gpt-image-1" } },
-        }),
-      }),
-    );
+    createToolWithPrimaryImageModel("openai/gpt-image-1");
     expect(listProviders).not.toHaveBeenCalled();
   });
 
@@ -893,19 +885,14 @@ describe("createImageGenerateTool", () => {
     taskRuntimeMocks.createOperation.mockReturnValue({
       taskId: "task-image-123",
     });
-    const tool = requireImageGenerateTool(
-      createImageGenerateTool({
-        config: configWithDefaults({
-          mediaModels: { image: { primary: "openai/gpt-image-1" } },
-        }),
-        agentDir: "/tmp/agent",
-        agentSessionKey: "agent:main:discord:direct:123",
-        requesterOrigin: {
-          channel: "discord",
-          to: "dm:123",
-        },
-      }),
-    );
+    const tool = createToolWithPrimaryImageModel("openai/gpt-image-1", {
+      agentDir: "/tmp/agent",
+      agentSessionKey: "agent:main:discord:direct:123",
+      requesterOrigin: {
+        channel: "discord",
+        to: "dm:123",
+      },
+    });
 
     await withHeldMediaGenerationResult(generateImage, taskRuntimeMocks, async (complete) => {
       const result = await tool.execute("call-async", {
@@ -1081,19 +1068,14 @@ describe("createImageGenerateTool", () => {
     taskRuntimeMocks.createOperation.mockReturnValue({
       taskId: "task-cron-image",
     });
-    const tool = requireImageGenerateTool(
-      createImageGenerateTool({
-        config: configWithDefaults({
-          mediaModels: { image: { primary: "openai/gpt-image-1" } },
-        }),
-        agentDir: "/tmp/agent",
-        agentSessionKey: "agent:main:cron:daily-media:run:run-123",
-        requesterOrigin: {
-          channel: "slack",
-          to: "channel:C123",
-        },
-      }),
-    );
+    const tool = createToolWithPrimaryImageModel("openai/gpt-image-1", {
+      agentDir: "/tmp/agent",
+      agentSessionKey: "agent:main:cron:daily-media:run:run-123",
+      requesterOrigin: {
+        channel: "slack",
+        to: "channel:C123",
+      },
+    });
 
     await withHeldCronMediaGenerationResult(generateImage, taskRuntimeMocks, async (complete) => {
       const result = await tool.execute("call-cron-inline", {
@@ -1134,22 +1116,16 @@ describe("createImageGenerateTool", () => {
         requesterSessionKey: "agent:main:discord:direct:123",
         task: "First diagram prompt",
         status: "running",
-        createdAt: Date.now(),
       },
     ]);
-    const tool = requireImageGenerateTool(
-      createImageGenerateTool({
-        config: configWithDefaults({
-          mediaModels: { image: { primary: "openai/gpt-image-1" } },
-        }),
-        agentDir: "/tmp/agent",
-        agentSessionKey: "agent:main:discord:direct:123",
-        requesterOrigin: {
-          channel: "discord",
-          to: "dm:123",
-        },
-      }),
-    );
+    const tool = createToolWithPrimaryImageModel("openai/gpt-image-1", {
+      agentDir: "/tmp/agent",
+      agentSessionKey: "agent:main:discord:direct:123",
+      requesterOrigin: {
+        channel: "discord",
+        to: "dm:123",
+      },
+    });
 
     await withHeldMediaGenerationResult(generateImage, taskRuntimeMocks, async (complete) => {
       const result = await tool.execute("call-second", {
@@ -1176,7 +1152,6 @@ describe("createImageGenerateTool", () => {
         runId: "tool:image_generate:first",
         task: "First diagram prompt",
         status: "running",
-        createdAt: Date.now(),
         progressSummary: "Generating first image",
       },
       {
@@ -1187,15 +1162,12 @@ describe("createImageGenerateTool", () => {
         runId: "tool:image_generate:second",
         task: "Second diagram prompt",
         status: "queued",
-        createdAt: Date.now(),
         progressSummary: "Queued second image",
       },
     ]);
     const tool = requireImageGenerateTool(
       createImageGenerateTool({
-        config: configWithDefaults({
-          mediaModels: { image: { primary: "openai/gpt-image-1" } },
-        }),
+        config: configWithDefaults({ mediaModels: { image: { primary: "openai/gpt-image-1" } } }),
         agentSessionKey: "agent:main:discord:direct:123",
       }),
     );
@@ -1235,19 +1207,13 @@ describe("createImageGenerateTool", () => {
         requesterSessionKey: "agent:main:discord:direct:123",
         task: "Same diagram prompt",
         status: "running",
-        createdAt: Date.now(),
         progressSummary: "Generating image",
       },
     ]);
-    const tool = requireImageGenerateTool(
-      createImageGenerateTool({
-        config: configWithDefaults({
-          mediaModels: { image: { primary: "openai/gpt-image-1" } },
-        }),
-        agentDir: "/tmp/agent",
-        agentSessionKey: "agent:main:discord:direct:123",
-      }),
-    );
+    const tool = createToolWithPrimaryImageModel("openai/gpt-image-1", {
+      agentDir: "/tmp/agent",
+      agentSessionKey: "agent:main:discord:direct:123",
+    });
 
     const result = await tool.execute("call-duplicate", {
       prompt: "Same diagram prompt",
@@ -1274,15 +1240,10 @@ describe("createImageGenerateTool", () => {
     });
     const generateImage = mockGeneratedImage();
     vi.spyOn(mediaStore, "saveMediaBuffer").mockResolvedValue(savedMedia("proof.png", 7));
-    const tool = requireImageGenerateTool(
-      createImageGenerateTool({
-        config: configWithDefaults({
-          mediaModels: { image: { primary: "openai/gpt-image-1" } },
-        }),
-        agentDir: "/tmp/agent",
-        agentSessionKey: "agent:main:discord:direct:123",
-      }),
-    );
+    const tool = createToolWithPrimaryImageModel("openai/gpt-image-1", {
+      agentDir: "/tmp/agent",
+      agentSessionKey: "agent:main:discord:direct:123",
+    });
 
     await withHeldMediaGenerationResult(generateImage, taskRuntimeMocks, async (complete) => {
       await tool.execute("call-recent-start", {
@@ -1332,15 +1293,10 @@ describe("createImageGenerateTool", () => {
       model: "gemini-3.1-flash-image-preview",
     });
     vi.spyOn(mediaStore, "saveMediaBuffer").mockResolvedValue(savedMedia("proof.png", 7));
-    const tool = requireImageGenerateTool(
-      createImageGenerateTool({
-        config: configWithDefaults({
-          mediaModels: { image: { primary: "google/gemini-3.1-flash-image-preview" } },
-        }),
-        agentDir: "/tmp/agent",
-        agentSessionKey: "agent:main:discord:direct:123",
-      }),
-    );
+    const tool = createToolWithPrimaryImageModel("google/gemini-3.1-flash-image-preview", {
+      agentDir: "/tmp/agent",
+      agentSessionKey: "agent:main:discord:direct:123",
+    });
 
     await withHeldMediaGenerationResult(generateImage, taskRuntimeMocks, async (complete) => {
       await tool.execute("call-first-model", {
@@ -1854,13 +1810,7 @@ describe("createImageGenerateTool", () => {
     vi.spyOn(imageGenerationRuntime, "listRuntimeImageGenerationProviders").mockReturnValue([
       createGoogleImageProvider(),
     ]);
-    const tool = requireImageGenerateTool(
-      createImageGenerateTool({
-        config: configWithDefaults({
-          mediaModels: { image: { primary: "google/gemini-3.1-flash-image-preview" } },
-        }),
-      }),
-    );
+    const tool = createToolWithPrimaryImageModel("google/gemini-3.1-flash-image-preview");
 
     await expect(tool.execute("call-2", { prompt: "too many cats", count: 5 })).rejects.toThrow(
       "count must be between 1 and 4",
@@ -1911,14 +1861,9 @@ describe("createImageGenerateTool", () => {
   it("passes web_fetch SSRF policy to remote reference images", async () => {
     stubImageGenerationProviders();
     const generateImage = stubEditedImageFlow({ width: 1024, height: 1024 });
-    const defaultTool = requireImageGenerateTool(
-      createImageGenerateTool({
-        config: configWithDefaults({
-          mediaModels: { image: { primary: "google/gemini-3-pro-image-preview" } },
-        }),
-        workspaceDir: process.cwd(),
-      }),
-    );
+    const defaultTool = createToolWithPrimaryImageModel("google/gemini-3-pro-image-preview", {
+      workspaceDir: process.cwd(),
+    });
 
     await defaultTool.execute("call-edit-rfc2544-default", {
       prompt: "Use this reference.",
@@ -2186,13 +2131,7 @@ describe("createImageGenerateTool", () => {
   it("rejects unsupported aspect ratios", async () => {
     stubImageGenerationProviders();
 
-    const tool = requireImageGenerateTool(
-      createImageGenerateTool({
-        config: configWithDefaults({
-          mediaModels: { image: { primary: "google/gemini-3-pro-image-preview" } },
-        }),
-      }),
-    );
+    const tool = createToolWithPrimaryImageModel("google/gemini-3-pro-image-preview");
 
     await expect(
       tool.execute("call-bad-aspect", { prompt: "portrait", aspectRatio: "7:5" }),
@@ -2204,13 +2143,7 @@ describe("createImageGenerateTool", () => {
   it("lists registered provider and model options", async () => {
     stubImageGenerationProviders();
 
-    const tool = requireImageGenerateTool(
-      createImageGenerateTool({
-        config: configWithDefaults({
-          mediaModels: { image: { primary: "google/gemini-3.1-flash-image-preview" } },
-        }),
-      }),
-    );
+    const tool = createToolWithPrimaryImageModel("google/gemini-3.1-flash-image-preview");
 
     const result = await tool.execute("call-list", { action: "list" });
     const text = resultText(result);
@@ -2287,13 +2220,7 @@ describe("createImageGenerateTool", () => {
       },
     ]);
 
-    const tool = requireImageGenerateTool(
-      createImageGenerateTool({
-        config: configWithDefaults({
-          mediaModels: { image: { primary: "__proto__/proto-v1" } },
-        }),
-      }),
-    );
+    const tool = createToolWithPrimaryImageModel("__proto__/proto-v1");
 
     const result = await tool.execute("call-list-proto", { action: "list" });
     const text = resultText(result);
